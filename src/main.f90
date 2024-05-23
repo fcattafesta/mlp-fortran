@@ -1,157 +1,98 @@
 ! Main program containing also the command line parser
-subroutine load_data(X, y, filename)
-
-    use iso_fortran_env, only: real32, int8
-
-    implicit none
-    ! Inputs
-    character(len=*), intent(in) :: filename
-    ! Outputs
-    real(real32), dimension(:,:), allocatable, intent(out) :: X
-    integer(int8), dimension(:), allocatable, intent(out) :: y
-    ! Local
-    integer :: i, ios, iu, n_samples
-    logical :: exists
-
-    ! Open the file
-    inquire(file=filename, exist=exists)
-    if (.not.exists) then
-        print*, 'Error: file ', trim(filename), ' does not exist'
-        stop
-    end if
-    open(newunit=iu, file=filename, status='old', action='read', iostat=ios)
-    if (ios /= 0) then
-        print*, 'Error: could not open file ', trim(filename)
-        stop
-    end if
-
-    ! Get the length of the file first (number of samples)
-    n_samples = 0
-    do
-        read(iu, *, iostat=ios)
-        if (ios /= 0) exit
-        n_samples = n_samples + 1
-    end do
-    rewind(iu)
-
-    ! Allocate the arrays (we are assuming that the horizontal dimension is fixed to 784 + 1)
-    allocate(X(n_samples, 784), y(n_samples))
-
-    ! Read the data
-    ! The first column is the true label and the rest are the pixel values
-    do i = 1, n_samples
-        read(iu, *) y(i), X(i, :)
-    end do
-
-    ! Close the file
-    close(iu)
-
-end subroutine load_data
-
-subroutine normalize(X)
-
-    use iso_fortran_env, only: real32
-
-    implicit none
-    real(real32), dimension(:,:), intent(inout) :: X
-    real(real32) :: max_val
-
-    max_val = maxval(X)
-    X = X / max_val
-
-end subroutine normalize
-
-subroutine one_hot_encode(y, y_encoded)
-
-    use iso_fortran_env, only: int8
-
-    implicit none
-    integer(int8), dimension(:), intent(in) :: y
-    integer(int8), dimension(size(y), 10), intent(inout) :: y_encoded
-    integer :: i
-    ! Initialize the encoded array to zero everywhere except for the diagonal elements which are set to 1
-    y_encoded = 0
-    do i = 1, size(y)
-        y_encoded(i, y(i) + 1) = 1
-    end do
-
-end subroutine one_hot_encode
-
 
 program main
 
     use iso_fortran_env, only: real32, int8
+    use dataset
+    use mlp_module, only: MLP
+    use utils
 
     implicit none
+    ! Train and test data
     real(real32), dimension(:,:), allocatable :: X_train, X_test, picture
-    integer(int8), dimension(:), allocatable :: y_train, y_test
-    integer(int8), dimension(:,:), allocatable :: y_train_encoded, y_test_encoded
-    ! character(len=256) :: filename_train, filename_test
-    integer :: i, j
+    real(real32), dimension(:), allocatable :: y_train, y_test
+    real(real32), dimension(:,:), allocatable :: y_train_encoded, y_test_encoded
+    ! Neural network
+    type(MLP) :: nn
+    integer :: batch_size, epochs, hidden_size, input_size, output_size
+    real(real32) :: learning_rate, random_index
+    ! Metrics
+    real(real32), dimension(:), allocatable :: train_loss, test_loss, train_accuracy, test_accuracy, epochs_vector
+    ! Others
+    integer :: i, j, epoch
+    character(len=100) :: train_file, test_file, metrics_file
 
-    interface
-        subroutine load_data(X, y, filename)
-            use iso_fortran_env, only: real32, int8
-            implicit none
-            real(real32), dimension(:,:), allocatable, intent(out) :: X
-            integer(int8), dimension(:), allocatable, intent(out) :: y
-            character(len=*), intent(in) :: filename
-        end subroutine load_data
-    end interface
+    ! Parse the command line arguments
+    call argument_parser(batch_size, epochs, hidden_size, learning_rate, train_file, test_file, metrics_file)
 
-    interface
-        subroutine normalize(X)
-            use iso_fortran_env, only: real32
-            implicit none
-            real(real32), dimension(:,:), intent(inout) :: X
-        end subroutine normalize
-    end interface
+    ! Allocate the metrics arrays
+    allocate(epochs_vector(epochs))
+    allocate(train_loss(epochs))
+    allocate(test_loss(epochs))
+    allocate(train_accuracy(epochs))
+    allocate(test_accuracy(epochs))
 
-    interface
-        subroutine one_hot_encode(y, y_encoded)
-            use iso_fortran_env, only: int8
-            implicit none
-            integer(int8), dimension(:), intent(in) :: y
-            integer(int8), dimension(size(y), 10), intent(inout) :: y_encoded
-        end subroutine one_hot_encode
-    end interface
-    
-    call load_data(X_train, y_train, 'data/mnist_train.csv')
-    call load_data(X_test, y_test, 'data/mnist_test.csv')
+    ! Load the data !! Pass the file names as arguments
+    call load_data(X_train, y_train, train_file)
+    call load_data(X_test, y_test, test_file)
 
-    print*, 'X_train shape: ', shape(X_train)
-    print*, 'y_train shape: ', shape(y_train)
-    print*, 'X_test shape: ', shape(X_test)
-    print*, 'y_test shape: ', shape(y_test)
+    ! Print the shapes of the data in a nice way
+    print "(a)", "Data loaded:"
+    write(*, '(a, 2(i0, a))') "X_train shape: (", size(X_train, dim=1), ", ", size(X_train, dim=2), ")"
+    write(*, '(a, 2(i0, a))') "y_train shape: (", size(y_train), ")"
+    write(*, '(a, 2(i0, a))') "X_test shape: (", size(X_test, dim=1), ", ", size(X_test, dim=2), ")"
+    write(*, '(a, 2(i0, a))') "y_test shape: (", size(y_test), ")"
 
+    ! Normalize the data
     call normalize(X_train)
     call normalize(X_test)
 
+    ! Allocate and One-hot encode the labels
     allocate(y_train_encoded(size(y_train), 10))
     allocate(y_test_encoded(size(y_test), 10))
-
     call one_hot_encode(y_train, y_train_encoded)
     call one_hot_encode(y_test, y_test_encoded)
 
-    print*, 'y_train_encoded shape: ', shape(y_train_encoded)
+    call random_number(random_index)
 
-    picture = transpose(reshape(X_train(3, :), [28, 28]))
+    random_index = random_index * size(X_train, 1)
+
+    call print_picture(X_train(int(random_index), :), y_train_encoded(int(random_index), :))
+
+    ! Initialize the neural network
+    input_size = size(X_train, 2)
+    output_size = size(y_test_encoded, 2)
+    call nn%init(input_size, hidden_size, output_size, batch_size, learning_rate)
+
     
-
-    ! nicely print the picture (rows are columns in Fortran)
-    do i = 1, 28
-        do j = 1, 28
-            if (picture(i, j) > 0.1) then
-                write(*, '(A)', advance='no') 'x'
-            else
-                write(*, '(A)', advance='no') ' '
-            end if
+    ! Train the neural network
+    do epoch=1, epochs
+        ! Train Loop
+        ! Loop over the batches
+        do j=1, size(X_train, 1), batch_size
+            call nn%train_epoch(X_train(j:j+batch_size-1, :), y_train_encoded(j:j+batch_size-1, :))
+            call nn%get_loss(y_train_encoded(j:j+batch_size-1, :), train_loss(epoch))
         end do
-        print*
+        ! Compute the train loss and accuracy
+        train_loss(epoch) = train_loss(epoch) / size(X_train, 1)
+        call nn%get_accuracy(X_train, y_train, train_accuracy(epoch))
+        ! Test Loop
+        ! Loop over the batches
+        do j=1, size(X_test, 1), batch_size
+            call nn%forward(X_test(j:j+batch_size-1, :), nn%output)
+            call nn%get_loss(y_test_encoded(j:j+batch_size-1, :), test_loss(epoch))
+        end do  
+        ! Compute the test loss and accuracy
+        test_loss(epoch) = test_loss(epoch) / size(X_test, 1)
+        call nn%get_accuracy(X_test, y_test, test_accuracy(epoch))
+        ! Print the metrics
+        write(*, '(a, i3)', advance='no') "Epoch: ", epoch
+        write(*, '(a, f6.4)', advance='no') " - Train Loss: ", train_loss(epoch)
+        write(*, '(a, f6.4)', advance='no') " - Test Loss: ", test_loss(epoch)
+        write(*, '(a, f6.4)', advance='no') " - Train Accuracy: ", train_accuracy(epoch)
+        write(*, '(a, f6.4)', advance='yes') " - Test Accuracy: ", test_accuracy(epoch)
     end do
 
-    ! print*, 'y_train: ', y_train_encoded(3, :)
-
-
+    call write_to_file(epochs, train_loss, test_loss, train_accuracy, test_accuracy, metrics_file)
 
 end program main

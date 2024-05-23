@@ -30,3 +30,16 @@
 *.exe
 *.out
 *.app
+
+# Data
+*.csv
+
+# Build
+bin/
+obj/
+mod/
+
+# Figures
+*.pdf
+*.png
+figures/

@@ -7,7 +7,7 @@ This project is a simple implementation of a Multilayer Perceptron (MLP) in Fort
 ## Preparation
 To extract the MNIST dataset, run the following command:
 ```
-cd data && tar -xvf mnist.tar.gz && cd ..
+cd data && tar -xvf mnist_data.tar.gz && cd ..
 ```
 Compile the code using the provided Makefile:
 ```

@@ -119,7 +119,7 @@ module mlp_module
 
         ! Compute the error of the output layer
         delta_t = (self%output - target ) * sigmoid_derivative(self%output)
-        ! Backpropagate the error !! Check if the calculation is correct !!
+        ! Backpropagate the error
         self%W2 = self%W2 - self%learning_rate * matmul(transpose(sigmoid(matmul(batch, self%W1))), delta_t)
         delta_h = matmul(delta_t, transpose(self%W2)) * sigmoid_derivative(matmul(batch, self%W1))
         self%W1 = self%W1 - self%learning_rate * matmul(transpose(batch), delta_h)

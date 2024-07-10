@@ -53,10 +53,9 @@ program main
     call one_hot_encode(y_train, y_train_encoded)
     call one_hot_encode(y_test, y_test_encoded)
 
+    ! Print a random picture
     call random_number(random_index)
-
     random_index = random_index * size(X_train, 1)
-
     call print_picture(X_train(int(random_index), :), y_train_encoded(int(random_index), :))
 
     ! Initialize the neural network

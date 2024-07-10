@@ -1,3 +1,4 @@
+! Module with utility functions 
 module utils
 
     use iso_fortran_env, only: real32
